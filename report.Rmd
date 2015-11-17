@@ -1,0 +1,164 @@
+---
+title: 'Data Science Capstone: Milestone Report'
+author: "by Chia LT"
+output:
+  pdf_document: default
+  html_document:
+    keep_md: yes
+  word_document: default
+---  
+
+```{r, label='prepare_r_environment', warning=FALSE, results='hide', echo=FALSE, message=FALSE}
+# load required packages
+library(reshape2)
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(RColorBrewer)
+library(tm)
+library(wordcloud)
+library(scales)
+library(robustbase)
+```  
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.width=12, fig.height=5, fig.path='Figs/')
+```
+## Title
+Yelp Business Checkin Data Analysis
+
+## Introduction
+This report forms part of the submission for the Coursera Data Science Capstone module.  Using the Yelp dataset provided, this report describes the analysis performed to uncover the types of businesses that are most popular across the different countries/states within the dataset.  Popularity is broadly defined by the number of checkins garnered by each business as it represents the number of customers visiting that business.  The analysis will also examine if there is a difference in checkins across the states.
+
+A [Yelp Shiny App](https://miny.shinyapps.io/yelp_app) has been created to supplement this report and all codes used in this analysis can be found on [Github](https://github.com/litheng/CapstoneProject) repo.
+
+
+## Data
+### Exploring the Data
+The Yelp dataset contains a total of 5 files: Business, Checkin, Review, Tip and User.  For the purpose of this analysis, only the first 2 files are used.  The preprocessing codes can be found in the prepare.R file.  In order to determine the number of checkins per business, there is a need to transpose the checkins for each business as the checkin count is broken down into periods.  A histogram is then plotted based on the checkin data.
+
+```{r, label='load_saved_data', results='hide', echo=FALSE}
+# load saved data
+load("yelp_app/data/checkin.RData")
+
+# preview business data
+str(business)
+
+# preview checkin data
+str(checkin)
+```  
+
+```{r, label='reshape_checkin_data', message=FALSE}
+# transpose checkin data
+m.checkin <- melt(checkin[,-1], na.rm=TRUE)
+colnames(m.checkin) <- c("business_id", "period", "checkin_count")
+a.checkin <- aggregate(checkin_count ~ business_id, data = m.checkin, FUN = sum)
+
+# plot histogram based on number of checkins
+ggplot(a.checkin, aes(checkin_count)) + geom_histogram(fill="cornflowerblue", color="grey") + scale_x_log10() + theme_bw() + ggtitle("Histogram of Total Checkin Count for Businesses")
+```
+<p>
+The histogram shows that the checkin count for majority of the businesses are less than 1000.
+
+### Combining Business and Checkin Data
+The checkin data is then combined with the business data, which provides the name, state, categories and attributes.
+
+```{r, label='combine_business_checkin_data', message=FALSE, warning=FALSE}
+# merge business and checkin datasets
+combined <- inner_join(a.checkin, business[,c("business_id","name","review_count","stars","categories","state","longitude","latitude")])
+
+# plot map based on number of checkins
+require(ggmap)
+qmap("Venezuela",zoom=2) + geom_jitter(data=combined, aes(x=longitude, y=latitude, size=checkin_count), alpha=0.5, color = "red") + ggtitle('Checkins by City')
+```
+<p>
+The map shows that the locations of the businesses in the dataset are spread over 4 countries: Canada, Germany, UK and US.
+
+```{r, label='plot_distribution_chart', message=FALSE, warning=FALSE}
+# plot chart based on checkin count, review count and star ratings by state
+ggplot(combined,aes(x=stars, y=checkin_count, size=review_count, color=state)) + geom_point(shape=19,alpha=0.5) + facet_wrap(~state, scales = "free_y", ncol = 6) + theme_bw() + guides(colour=FALSE) + scale_size(range = c(5, 20)) + xlab("Star Rating") + ylab("Number of Checkins")
+```
+<p>
+The distribution chart shows that in most states, the checkins for businesses are positively skewed with star ratings between 3 and 4. It also shows that there are more businesses in Nevada (NV) state in US and the number of checkins and reviews of those businesses are much higher.
+
+## Methods
+## Identifying the Top Businesses
+To identify which are the most popular businesses (defined by number of checkins), the 95th percentile of the checkin count is calculated.  Businesses with checkin count above this quantile are selected.
+  
+```{r, label = 'select_top_businesses', message=FALSE}
+# calculate checkin count at 95th percentile
+q.count <- quantile(combined$checkin_count, probs=.95)
+q.count
+
+# get top 5 percent businesses based on quantile
+top <- subset(combined, combined$checkin_count > q.count)
+top <- arrange(top, desc(checkin_count))
+head(top[,c(3,2,4)])
+```  
+It is noted that the top 5 businesses are either airports or hotels/casinos, which is not unexpected.
+
+### Creating Categories Word Cloud
+To analyse the types of businesses that are most popular, a word cloud is created based on the category terms of the selected businesses.
+
+```{r, label = 'create_term_matrix'}
+# get categories of top businesses
+cat <- Corpus(VectorSource(top$categories))
+cat <- tm_map(cat, content_transformer(removePunctuation))
+cat <- tm_map(cat, content_transformer(tolower))
+cat <- tm_map(cat, content_transformer(stripWhitespace))
+cat.tdm <- TermDocumentMatrix(cat)
+cat.tdm <- sort(rowSums(as.matrix(cat.tdm)),decreasing=TRUE)
+cat.terms <- data.frame(word = names(cat.tdm),freq=cat.tdm)
+head(cat.terms, 10)
+```  
+From the category terms that are tagged to the top businesses, 3 main business types are identified: Restaurants, Bars and Hotels.  A word cloud for all the category terms tagged to the top businesses is created.
+
+```{r, label = 'create_word_cloud'}
+# create word cloud based on the categories
+wordcloud(words = cat.terms$word, freq = cat.terms$freq, scale=c(4,.5), min.freq = 1, max.words=200, random.order=FALSE, rot.per=0.35, colors=brewer.pal(10, "Paired"))
+```
+
+### Select Top Business Category Types
+A subset of the top businesses is created based on the top category terms identified: Restaurants Bars and Hotels.
+
+```{r, label = 'create_random_forest_model', message=FALSE, warning=FALSE}
+# split businesses into major categories
+restaurants <- combined[grep("Restaurant", combined$categories),c(1,2,7)]
+restaurants$type <- "Restaurant"
+hotels <-  combined[grep("Hotel", combined$categories),]
+hotels <-  hotels[-grep("Airport", hotels$categories),c(1,2,7)]
+hotels$type <- "Hotel"
+bars <-  combined[grep("Bar", combined$categories),c(1,2,7)]
+bars$type <- "Bar"
+bustype <- rbind(restaurants, hotels, bars)
+```  
+
+### Create Box Plot
+Box plots are created based on the 3 business types, followed by the 13 states.
+
+```{r, label = 'create_boxplot'}
+# plot boxplot by business type
+adjbox(checkin_count~type, data=bustype, main=("Checkin Count by Business Type"), ylab="No. of Checkins", font.lab=3, col=brewer.pal(3,"Dark2"), log="y")
+
+# plot boxplot by state
+adjbox(checkin_count~state, data=bustype, main=("Checkin Count by State"), ylab="No. of Checkins", font.lab=3, col=brewer.pal(12,"Set3"), log="y")
+```  
+<p>
+The boxplot shows that the checkin count is obviously higher in some states (like AZ and NV) than the others.
+
+### Analysis of Variance
+```{r, label = 'analyse_variance'}
+# perform anova test
+aov <- aov(checkin_count~state*type,data=bustype)
+summary(aov)
+```
+
+## Results
+From the summary results of the analyis of variance, it is noted that there are individual F-values (and associated p-values) for each of three variables: State, Business Type and interaction between State and Business Type.  The p-value for all variables are < 0.01, which signifies that there is a strong relation between number of checkins and the state which the business is located and the type of business.  The interaction effect between state and business type is also statistically significant, meaning that there is a dependency between the variables.
+
+Further analysis is performed on which are the top businesses by region/country and the categories and attributes of these businesses.  To view the analysis output, please access the [Yelp Shiny App](https://miny.shinyapps.io/yelp_app).  The first tab of the app lists the total checkin count of the selected region by day as well as the names of the 10 businesses with the highest checkin count in the region. The second tab shows the word clouds for categories and attributes of the top selected percentage of businesses in the selected region.  This allows users to see which are categories of business that are most frequented and their associated attributes, like whether it is good for groups or offers parking lots.
+
+## Discussion
+This analysis has taken into account all the states provided.  However, it has been observed that other than businesses in the US, data for the other countries are limited with some having only single digit checkins.  As such, these may potentially be excluded from the analysis and the focus can be on understanding businesses within the US states only, which have much larger sample sizes.  To make the analysis output even more useful, it can be performed by zooming into the cities and even neighhbourhoods which the businesses are located in.
+
+Another observation is that each business is tagged with multiple category terms so labelling them to a single business type may undermine the interaction effect between types tied to the same business.

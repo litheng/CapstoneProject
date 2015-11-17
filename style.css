@@ -1,0 +1,41 @@
+<style>
+.reveal h1, .reveal h2, .reveal h3 {
+  word-wrap: normal;
+  -moz-hyphens: none;
+}
+.small-code pre code {
+  font-size: 1em;
+}
+.midcenter {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+}
+.footer {
+    color: black; background: #E8E8E8;
+    position: fixed; top: 90%;
+    text-align:center; width:100%;
+}
+.granite .reveal .state-background {
+  background: #7E7CA1;
+} 
+.granite .reveal h1,
+.granite .reveal h2,
+.granite .reveal p {
+  color: white;
+}
+.steel .reveal h1,
+.steel .reveal h2,
+.steel .reveal p {
+  color: #342D7E;
+}
+.blue .reveal .state-background {
+  background: aliceblue;
+} 
+
+.blue .reveal h1,
+.blue .reveal h2,
+.blue .reveal p {
+  color: slategrey;
+}
+</style>
