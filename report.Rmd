@@ -82,7 +82,7 @@ ggplot(combined,aes(x=stars, y=checkin_count, size=review_count, color=state)) +
 The distribution chart shows that in most states, the checkins for businesses are positively skewed with star ratings between 3 and 4. It also shows that there are more businesses in Nevada (NV) state in US and the number of checkins and reviews of those businesses are much higher.
 
 ## 4 Methods
-## 4.1 Identifying the Top Businesses
+### 4.1 Identifying the Top Businesses
 To identify which are the most popular businesses (defined by number of checkins), the 95th percentile of the checkin count is calculated.  Businesses with checkin count above this quantile are selected.
   
 ```{r, label = 'select_top_businesses', message=FALSE}
